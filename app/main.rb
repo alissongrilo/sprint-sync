@@ -20,4 +20,15 @@ class Main < Sinatra::Base
     status 502
     { error: "Azure DevOps connection error: #{e.message}" }.to_json
   end
+
+  get '/pull_requests/metrics' do
+    platform = ENV['USER_PLATFORM']
+
+    pull_request_service = Services::PullRequestService.new(platform)
+
+    metrics = pull_request_service.get_metrics(params)
+
+    content_type :json
+    { metrics: metrics }.to_json
+  end
 end

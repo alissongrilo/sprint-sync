@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require 'time'
+require 'json'
+
 module Adapters
   class AzureDevOpsAdapter
     include Ports::PullRequestPort
@@ -10,7 +13,63 @@ module Adapters
       process_pull_requests(pull_requests)
     end
 
+    def get_metrics(filters)
+      @filters = build_search_filters(filters)
+      pull_requests = fetch_pull_requests
+      process_metrics(process_pull_requests(pull_requests))
+    end
+
     private
+
+    def process_metrics(pull_requests)
+      unique_name_to_squad = {
+        # map the unique name to the squad name
+      }
+
+      squads = Hash.new do |hash, key|
+        hash[key] =
+          { pr_count: 0, total_lead_time_pr: 0, total_lead_time_open_to_comment: 0,
+            total_lead_time_first_review_to_closed: 0 }
+      end
+
+      # Process PRs
+      pull_requests.each do |pr|
+        created_date = Time.parse(pr[:createdDate])
+        closed_date = Time.parse(pr[:closedDate])
+        first_text_comment_date = pr[:firstTextCommentDate] ? Time.parse(pr[:firstTextCommentDate]) : closed_date
+        first_approved_date = pr[:firstApprovedDate] ? Time.parse(pr[:firstApprovedDate]) : closed_date
+
+        # Lead time calculations
+        lead_time_open_to_closed = (closed_date - created_date) / 86_400 # Convert to days
+        lead_time_open_to_comment = (first_text_comment_date - created_date) / 86_400 # Convert to days
+        lead_time_first_review_to_closed = (closed_date - first_approved_date) / 86_400 # Convert to days
+
+        # Get the squad from unique name
+        squad_name = unique_name_to_squad[pr[:createdBy][:uniqueName]]
+
+        # Increment PR count and add lead times to the correct squad
+        squads[squad_name][:pr_count] += 1
+        squads[squad_name][:total_lead_time_pr] += lead_time_open_to_closed
+        squads[squad_name][:total_lead_time_open_to_comment] += lead_time_open_to_comment
+        squads[squad_name][:total_lead_time_first_review_to_closed] += lead_time_first_review_to_closed
+      end
+
+      # Calculate average lead times per squad
+      squads.each do |squad, data|
+        data[:avgLeadTimePR] = (data[:total_lead_time_pr] / data[:pr_count]).round(2)
+        data[:avgLeadTimeOpenToFirstComment] = (data[:total_lead_time_open_to_comment] / data[:pr_count]).round(2)
+        data[:avgLeadTimeFirstReviewToClosed] =
+          (data[:total_lead_time_first_review_to_closed] / data[:pr_count]).round(2)
+
+        # Remove total lead times as they're no longer needed
+        data.delete(:total_lead_time_pr)
+        data.delete(:total_lead_time_open_to_comment)
+        data.delete(:total_lead_time_first_review_to_closed)
+      end
+
+      # Convert the structure to JSON and output
+      squads
+    end
 
     def build_search_filters(filters)
       {

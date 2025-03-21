@@ -17,5 +17,9 @@ module Services
     def get_pull_requests(filters)
       @strategy.get_pull_requests(filters)
     end
+
+    def get_metrics(filters)
+      @strategy.get_metrics(filters)
+    end
   end
 end
